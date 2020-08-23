@@ -1,0 +1,19 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: logstash-nlb-service
+  namespace: logstash
+  labels:
+    run: logstash-nlb-service
+  annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+spec:
+  selector:
+    app: logstash
+  ports:
+  - protocol: TCP
+    port: 5044
+    targetPort: 5044
+    name: filebeat
+  type: LoadBalancer

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash-deployment
+  namespace: logstash
+spec:
+  selector:
+    matchLabels:
+      app: logstash
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:7.8.0
+        command: ["/bin/sh"]
+        args: ["-c", "logstash-plugin install logstash-output-amazon_es && /usr/local/bin/docker-entrypoint"]
+        ports:
+        - containerPort: 5044
+        resources:
+            requests:
+              memory: 2Gi
+              cpu: 0.5
+        volumeMounts:
+          - name: timezone-volume
+            mountPath: /etc/localtime
+          - name: config-volume
+            mountPath: /usr/share/logstash/config
+          - name: pipeline-volume
+            mountPath: /usr/share/logstash/pipeline
+      volumes:
+      - name: timezone-volume
+        hostPath:
+             path: /usr/share/zoneinfo/Asia/Singapore
+      - name: config-volume
+        configMap:
+          name: logstash-configmap
+          items:
+            - key: logstash.yml
+              path: logstash.yml
+      - name: pipeline-volume
+        configMap:
+          name: logstash-configmap
+          items:
+            - key: 10-input.conf
+              path: 10-input.conf
+            - key: 20-nginx_access.conf
+              path: 20-nginx_access.conf
+            - key: 30-nginx_error.conf
+              path: 30-nginx_error.conf
+            - key: 40-php_app
+              path: 40-php_app

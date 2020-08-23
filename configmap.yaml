@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-configmap
+  namespace: logstash
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    queue.type: persisted
+  10-input.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+  20-nginx_access.conf: |
+    filter {
+      mutate {
+          remove_field => [ "[host]" ]
+      }
+        mutate {
+          add_field => {
+          "host" => "%{[beat][hostname]}"
+      }
+    }
+
+      date {
+          match => [ "syslog_timestamp", "YYYY-MM-DD HH:MM:SS" , "yyyy/MM/dd HH:mm:ss" ]
+      }
+
+      if [type] == "svr01_nginx_access" or [type] == "svr02_nginx_access" {
+            grok {
+                match => {
+                    "message" => '<%{POSINT:priority}>%{SYSLOGTIMESTAMP:timestamp} %{DATA:log_stream} %{DATA:log_type}\: %{IP:remote_addr} \[%{HOSTNAME:hostname}\] %{WORD:method} \"%{URIPATH:uri}\" \"%{DATA:params}\" \"HTTP/%{NUMBER:http_version}\" %{INT:status} %{NUMBER:bytes_sent:int} \"%{DATA:http_referer}\" \"%{DATA:http_user_agent}\" \"%{DATA:forwarded_for}\" \"%{DATA:cluster}\"'
+                }
+            }
+      }
+
+      else {
+            grok {
+                match => {
+                    "message" => '<%{POSINT:priority}>%{SYSLOGTIMESTAMP:timestamp} %{DATA:log_stream} %{DATA:log_type}\: %{IP:remote_addr} \[%{HOSTNAME:hostname}\] \"%{WORD:method} %{URIPATHPARAM:request} HTTP/%{NUMBER:http_version}\" %{INT:status} %{NUMBER:bytes_sent:int} \"%{DATA:http_referer}\" \"%{DATA:http_user_agent}\" \"%{DATA:forwarded_for}\" \"%{DATA:cluster}\"'
+                }
+            }
+        }
+
+        mutate {
+            remove_field => [ "@version", "_score", "_type", "log_stream", "log_type", "priority", "timestamp", "host" ]
+                convert => { "bytes_sent" => "integer" }
+            }
+        }
+
+    output {
+      if [type] == "svr01_nginx_access" {
+        amazon_es {
+          hosts => ["vpc-youresdomain.us-east-1.es.amazonaws.com"]
+            index => "svr01_nginx_access-%{+YYYY.MM.dd}"
+            region => "us-east-1"
+            aws_access_key_id => ''
+            aws_secret_access_key => ''
+        }
+      }
+      if [type] == "svr02_nginx_access" {
+        amazon_es {
+          hosts => ["vpc-youresdomain.us-east-1.es.amazonaws.com"]
+            index => "svr02_nginx_access-%{+YYYY.MM.dd}"
+            region => "us-east-1"
+            aws_access_key_id => ''
+            aws_secret_access_key => ''
+        }
+      }
+      s3 {
+        bucket => "s3-bucket-name"
+        size_file => 1024
+        time_file => 1
+        codec => json_lines
+        prefix => "nginx_access"
+        }
+      }
+
+  30-nginx_error.conf: |
+    filter {
+      date {
+          match => [ "syslog_timestamp", "YYYY-MM-DD HH:MM:SS" , "yyyy/MM/dd HH:mm:ss" ]
+        }
+
+      if [type] == "svr01_nginx_error" or [type] == "svr02_nginx_error" {
+          grok {
+              match => {
+                  "message" => '(?<timestamp>%{YEAR}[./]%{MONTHNUM}[./]%{MONTHDAY} %{TIME}) \[%{LOGLEVEL:severity}\] %{GREEDYDATA:message}, client: %{IP:client}'
+              }
+          }
+      }
+    }
+
+    output {
+      if [type] == "svr01_nginx_error" {
+        amazon_es {
+          hosts => ["vpc-youresdomain.us-east-1.es.amazonaws.com"]
+            index => "svr01_nginx_error-%{+YYYY.MM.dd}"
+            region => "us-east-1"
+            aws_access_key_id => ''
+            aws_secret_access_key => ''
+        }
+      if [type] == "svr02_nginx_error" {
+        amazon_es {
+          hosts => ["vpc-youresdomain.us-east-1.es.amazonaws.com"]
+            index => "svr02_nginx_error-%{+YYYY.MM.dd}"
+            region => "us-east-1"
+            aws_access_key_id => ''
+            aws_secret_access_key => ''
+        }
+      s3 {
+        bucket => "s3-bucket-name"
+        size_file => 1024
+        time_file => 1
+        codec => json_lines
+        prefix => "nginx_error"
+          }
+        }
+      }
+  40-php_app: |
+    filter {
+      date {
+          match => [ "syslog_timestamp", "YYYY-MM-DD HH:MM:SS" , "yyyy/MM/dd HH:mm:ss" ]
+        }
+
+      if [type] == "php_app" {
+          grok {
+              match => {
+                  "message" => '%{IPORHOST:remote_ip} - %{DATA:user_name} %{HTTPDATE:access_time} \"%{WORD:http_method}'
+            }
+          }
+        }
+      }
+
+    output {
+      if [type] == "php_app" {
+        amazon_es {
+          hosts => ["vpc-youresdomain.us-east-1.es.amazonaws.com"]
+            index => "php_app-%{+YYYY.MM.dd}"
+            region => "us-east-1"
+            aws_access_key_id => ''
+            aws_secret_access_key => ''
+        }
+        s3 {
+          bucket => "s3-bucket-name"
+          size_file => 1024
+          time_file => 1
+          codec => json_lines
+          prefix => "php_app"
+          }
+        }
+      }
